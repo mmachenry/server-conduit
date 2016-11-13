@@ -4,7 +4,8 @@ module Data.Conduit.Network.Server (
   serve,
   ClientConnection,
   getFromClient,
-  sendToClient
+  sendToClient,
+  oneToOneServer
 ) where
 
 import Data.Conduit.TMChan
@@ -99,4 +100,18 @@ writeToClient
   -> IO ()
 writeToClient sink writer chan = runResourceT $
   sourceTMChan chan $$ CL.map writer =$= sink
+
+oneToOneServer
+  :: Int
+  -> Parser incoming
+  -> (incoming -> B.ByteString)
+  -- -> (SomeException -> IO ()) --TODO add exception handler?
+  -> IO ()
+oneToOneServer portNumber parser handler =
+  runTCPServer (serverSettings portNumber "*") $ \appData -> runResourceT (
+    appSource appData
+    $$ conduitParser parser
+    =$= CL.map snd
+    =$= CL.map handler
+    =$= appSink appData)
 
