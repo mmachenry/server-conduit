@@ -27,8 +27,11 @@ import Data.Attoparsec.ByteString (Parser)
 data ClientConnection incoming outgoing = ClientConnection {
   clientInputChan :: TMChan incoming,
   clientOutputChan :: TMChan outgoing,
-  _clientSockAddr :: SockAddr
+  clientSockAddr :: SockAddr
   }
+
+instance Eq (ClientConnection a b) where
+  c1 == c2 = clientSockAddr c1 == clientSockAddr c2
 
 -- | The main-loop server function. It will concurrently accept new connections
 -- from clients, read data from each client into a queue and send data push
