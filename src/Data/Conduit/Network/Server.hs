@@ -5,6 +5,7 @@ module Data.Conduit.Network.Server (
   ClientConnection,
   getFromClient,
   sendToClient,
+  disconnectClient,
   oneToOneServer
 ) where
 
@@ -20,6 +21,8 @@ import qualified Data.ByteString as B
 import Network.Socket (SockAddr)
 import Data.Conduit.Attoparsec (conduitParser)
 import Data.Attoparsec.ByteString (Parser)
+import Control.Concurrent
+import Control.Exception.Base( AsyncException( ThreadKilled ) )
 
 -- | An opaque data tyoe representing the conection to the client. This is the
 -- type of the object that will be passed to the main handler function and
@@ -27,7 +30,8 @@ import Data.Attoparsec.ByteString (Parser)
 data ClientConnection incoming outgoing = ClientConnection {
   clientInputChan :: TMChan incoming,
   clientOutputChan :: TMChan outgoing,
-  clientSockAddr :: SockAddr
+  clientSockAddr :: SockAddr,
+  clientThreadId :: ThreadId
   }
 
 instance Eq (ClientConnection a b) where
@@ -58,7 +62,8 @@ serve portNumber parser writer handler onError =
   runTCPServer (serverSettings portNumber "*") $ \appData -> do
     inChan <- newTMChanIO
     outChan <- newTMChanIO
-    let conn = ClientConnection inChan outChan (appSockAddr appData)
+    threadId <- myThreadId
+    let conn = ClientConnection inChan outChan (appSockAddr appData) threadId
     runConcurrently $
       Concurrently (readFromClient (appSource appData) parser inChan) *>
       Concurrently (writeToClient (appSink appData) writer outChan) *>
@@ -78,6 +83,9 @@ sendToClient
   -> IO ()
 sendToClient conn msg =
   atomically $ writeTMChan (clientOutputChan conn) msg
+
+disconnectClient :: ClientConnection incoming outgoing -> IO ()
+disconnectClient conn = throwTo (clientThreadId conn) ThreadKilled
 
 -- Create a conduit pipeline that will read from the runTCPServer's sink,
 -- apply the parser, and send it to an STM-based queue that will hold the
@@ -111,10 +119,9 @@ oneToOneServer
   -- -> (SomeException -> IO ()) --TODO add exception handler?
   -> IO ()
 oneToOneServer portNumber parser handler =
-  runTCPServer (serverSettings portNumber "*") $ \appData -> runResourceT (
+  runTCPServer (serverSettings portNumber "*") $ \appData -> runResourceT $
     appSource appData
     $$ conduitParser parser
     =$= CL.map snd
     =$= CL.map handler
-    =$= appSink appData)
-
+    =$= appSink appData
