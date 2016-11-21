@@ -29,7 +29,7 @@ library
                      , network
                      , conduit-extra
                      , safe-exceptions
-  ghc-options:         -Wall
+  ghc-options:         -Wall -Werror
   default-language:    Haskell2010
 
 executable server-conduit-exe
